@@ -42,13 +42,13 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Bitácora Geográfica requiere acceso a la cámara para tomar fotos."
+          "cameraPermission": "Bitácora Geográfica requiere acceso a la cámara para capturar fotos."
         }
       ],
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "Bitácora Geográfica requiere acceso a la ubicación para registrar las coordenadas GPS."
+          "locationAlwaysAndWhenInUsePermission": "Bitácora Geográfica requiere acceso a tu ubicación para adjuntar coordenadas GPS a las fotografías."
         }
       ]
     ],
