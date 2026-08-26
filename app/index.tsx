@@ -1,5 +1,4 @@
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import { Camera, Image as ImageIcon } from 'lucide-react-native';
 import React, { useRef, useState } from 'react';
@@ -15,6 +14,7 @@ import {
   View,
 } from 'react-native';
 import { useGeoLog } from '../context/GeoLogContext';
+import { getCurrentLocation } from '../utils/permissions';
 
 export default function CaptureScreen() {
   const router = useRouter();
@@ -28,7 +28,7 @@ export default function CaptureScreen() {
   const [isCapturing, setIsCapturing] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
 
-  //solicitar/verificar permisos de cámara
+  // Solicitar/verificar permisos de cámara
   if (!permission) {
     return <View style={styles.container} />;
   }
@@ -61,7 +61,7 @@ export default function CaptureScreen() {
     }
   };
 
-  //guardar entrada con ubicación GPS
+  // Guardar entrada con ubicación GPS
   const handleSaveEntry = async () => {
     if (!photoUri) {
       Alert.alert('Atención', 'Debes tomar una fotografía primero.');
@@ -75,26 +75,17 @@ export default function CaptureScreen() {
     setIsCapturing(true);
 
     try {
-      //solicitar y obtener ubicación GPS actual
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      let locationCoords = null;
+      // Obtener ubicación GPS usando el utilitario refactorizado
+      const locationCoords = await getCurrentLocation();
 
-      if (status === 'granted') {
-        const loc = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
-        });
-        locationCoords = {
-          latitude: loc.coords.latitude,
-          longitude: loc.coords.longitude,
-        };
-      } else {
+      if (!locationCoords) {
         Alert.alert(
           'Aviso',
           'No se otorgaron permisos de ubicación. La foto se guardará sin datos GPS.'
         );
       }
 
-      //crea objeto de bitácora
+      // Crea objeto de bitácora
       addLog({
         id: Date.now().toString(),
         photoUri,
@@ -104,7 +95,7 @@ export default function CaptureScreen() {
         timestamp: Date.now(),
       });
 
-      //limpiar formulario y navegar a la Galería
+      // Limpiar formulario y navegar a la Galería
       setPhotoUri(null);
       setTitle('');
       setDescription('');
