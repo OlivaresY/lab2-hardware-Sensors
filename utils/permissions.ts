@@ -1,8 +1,8 @@
 import * as Location from 'expo-location';
 
-/**
- * Solicita y verifica los permisos de ubicación en primer plano.
- */
+
+ /**Solicita permisos de ubicación en primer plano de manera segura.*/
+
 export const requestLocationPermissions = async (): Promise<boolean> => {
   try {
     const { status: existingStatus } = await Location.getForegroundPermissionsAsync();
@@ -19,7 +19,8 @@ export const requestLocationPermissions = async (): Promise<boolean> => {
 };
 
 /**
- * Obtiene las coordenadas GPS actuales si los permisos son concedidos.
+ * Obtiene la ubicación GPS con Alta Precisión. Si falla o se niega el permiso, 
+ * retorna null de forma segura evitando que la app colapse.
  */
 export const getCurrentLocation = async (): Promise<{ latitude: number; longitude: number } | null> => {
   try {
@@ -29,7 +30,7 @@ export const getCurrentLocation = async (): Promise<{ latitude: number; longitud
     }
 
     const loc = await Location.getCurrentPositionAsync({
-      accuracy: Location.Accuracy.Balanced,
+      accuracy: Location.Accuracy.High, // Garantiza precisión razonable/alta para la bitácora
     });
 
     return {
@@ -37,7 +38,7 @@ export const getCurrentLocation = async (): Promise<{ latitude: number; longitud
       longitude: loc.coords.longitude,
     };
   } catch (error) {
-    console.error('Error al obtener la ubicación actual:', error);
+    console.error('Error al obtener coordenadas GPS:', error);
     return null;
   }
 };

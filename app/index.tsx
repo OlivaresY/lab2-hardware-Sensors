@@ -29,62 +29,76 @@ export default function CaptureScreen() {
   const [isCapturing, setIsCapturing] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
 
-  // Solicitar permisos de ubicación anticipadamente al cargar la pantalla
+  // Solicitar permisos de ubicación anticipadamente de forma segura
   useEffect(() => {
     requestLocationPermissions();
   }, []);
 
-  //verificar permisos de cámara
+  //fallback mientras cargan los permisos
   if (!permission) {
-    return <View style={styles.container} />;
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator size="large" color="#2563eb" />
+      </View>
+    );
   }
 
+  //fallback UI: Si el permiso de cámara fue denegado
   if (!permission.granted) {
     return (
       <View style={styles.centered}>
+        <Text style={styles.permissionTitle}>Permisos requeridos</Text>
         <Text style={styles.permissionText}>
-          Necesitamos tu permiso para acceder a la cámara.
+          No se ha otorgado acceso a la cámara. Para registrar fotos en la bitácora, habilita el permiso correspondiente.
         </Text>
         <TouchableOpacity style={styles.button} onPress={requestPermission}>
           <Text style={styles.buttonText}>Conceder Permiso</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.secondaryButton}
+          onPress={() => router.push('/gallery')}
+        >
+          <Text style={styles.secondaryButtonText}>Ir a la Galería sin foto</Text>
         </TouchableOpacity>
       </View>
     );
   }
 
-  //captura simultánea: Tomar foto y obtener coordenadas GPS
+  //captura de fotografía y obtención segura del GPS
   const handleTakePhoto = async () => {
-    if (cameraRef.current) {
-      try {
-        setIsCapturing(true);
+    if (!cameraRef.current || isCapturing) return;
 
-        // Disparar lectura de GPS y captura de foto de forma simultánea
-        const [photo, locationCoords] = await Promise.all([
-          cameraRef.current.takePictureAsync(),
-          getCurrentLocation(),
-        ]);
+    try {
+      setIsCapturing(true);
 
-        if (photo?.uri) {
-          setPhotoUri(photo.uri);
-          setLocation(locationCoords);
-          setShowCamera(false);
+      // Obtener la fotografía
+      const photo = await cameraRef.current.takePictureAsync({
+        quality: 0.8,
+      });
 
-          if (!locationCoords) {
-            Alert.alert(
-              'Aviso',
-              'No se pudo obtener la ubicación GPS al tomar la foto.'
-            );
-          }
+      if (photo?.uri) {
+        setPhotoUri(photo.uri);
+        setShowCamera(false);
+
+        //bbtener lectura de GPS con fallback seguro
+        const locationCoords = await getCurrentLocation();
+        setLocation(locationCoords);
+
+        if (!locationCoords) {
+          Alert.alert(
+            'Aviso de Ubicación',
+            'No se lograron obtener las coordenadas GPS exactas. La entrada se guardará sin datos de localización.'
+          );
         }
-      } catch (error) {
-        Alert.alert('Error', 'No se pudo tomar la fotografía ni obtener la ubicación.');
-      } finally {
-        setIsCapturing(false);
       }
+    } catch (error) {
+      Alert.alert('Error', 'Ocurrió un error al intentar capturar la imagen.');
+    } finally {
+      setIsCapturing(false);
     }
   };
 
-  //guardar entrada utilizando los datos capturados previamente
+  //guardar entrada en el Context
   const handleSaveEntry = async () => {
     if (!photoUri) {
       Alert.alert('Atención', 'Debes tomar una fotografía primero.');
@@ -101,13 +115,13 @@ export default function CaptureScreen() {
       addLog({
         id: Date.now().toString(),
         photoUri,
-        title,
-        description,
+        title: title.trim(),
+        description: description.trim(),
         location,
         timestamp: Date.now(),
       });
 
-      // Limpiar formulario y navegar a la Galería
+      //limpiar formulario y navegar
       setPhotoUri(null);
       setLocation(null);
       setTitle('');
@@ -117,10 +131,11 @@ export default function CaptureScreen() {
       router.push('/gallery');
     } catch (error) {
       setIsCapturing(false);
-      Alert.alert('Error', 'Ocurrió un error al procesar la entrada.');
+      Alert.alert('Error', 'Ocurrió un error al guardar la entrada en la bitácora.');
     }
   };
 
+  //vista de visor de Cámara
   if (showCamera) {
     return (
       <View style={styles.cameraContainer}>
@@ -143,18 +158,24 @@ export default function CaptureScreen() {
     );
   }
 
+  //formulario principal
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.label}>Fotografía</Text>
       {photoUri ? (
         <View style={styles.previewContainer}>
           <Image source={{ uri: photoUri }} style={styles.previewImage} />
-          {location && (
+          {location ? (
             <View style={styles.locationBadge}>
               <MapPin color="#fff" size={14} />
               <Text style={styles.locationBadgeText}>
                 {location.latitude.toFixed(4)}, {location.longitude.toFixed(4)}
               </Text>
+            </View>
+          ) : (
+            <View style={[styles.locationBadge, styles.noLocationBadge]}>
+              <MapPin color="#fff" size={14} />
+              <Text style={styles.locationBadgeText}>Sin GPS</Text>
             </View>
           )}
           <TouchableOpacity
@@ -210,7 +231,7 @@ export default function CaptureScreen() {
         onPress={() => router.push('/gallery')}
       >
         <ImageIcon color="#3b82f6" size={20} />
-        <Text style={styles.secondaryButtonText}>Ver Fotografía Registradas</Text>
+        <Text style={styles.secondaryButtonText}>Ver Fotografías Registradas</Text>
       </TouchableOpacity>
     </ScrollView>
   );
@@ -221,7 +242,7 @@ const styles = StyleSheet.create({
   cameraContainer: { flex: 1, backgroundColor: '#000' },
   cameraOverlay: {
     flex: 1,
-    justify: 'flex-end',
+    justifyContent: 'flex-end',
     alignItems: 'center',
     paddingBottom: 40,
   },
@@ -244,12 +265,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
+    backgroundColor: '#f8fafc',
+  },
+  permissionTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#0f172a',
+    marginBottom: 8,
   },
   permissionText: {
-    fontSize: 16,
+    fontSize: 15,
     textAlign: 'center',
     marginBottom: 20,
     color: '#334155',
+    lineHeight: 22,
   },
   label: {
     fontSize: 16,
@@ -283,6 +312,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     gap: 4,
   },
+  noLocationBadge: {
+    backgroundColor: 'rgba(225, 29, 72, 0.8)',
+  },
   locationBadgeText: { color: '#fff', fontSize: 12, fontWeight: '600' },
   retakeButton: {
     position: 'absolute',
@@ -312,6 +344,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
     marginTop: 24,
+    width: '100%',
   },
   disabledButton: { backgroundColor: '#94a3b8' },
   buttonText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
