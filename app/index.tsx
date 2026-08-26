@@ -1,7 +1,7 @@
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useRouter } from 'expo-router';
-import { Camera, Image as ImageIcon } from 'lucide-react-native';
-import React, { useRef, useState } from 'react';
+import { Camera, Image as ImageIcon, MapPin } from 'lucide-react-native';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -14,7 +14,7 @@ import {
   View,
 } from 'react-native';
 import { useGeoLog } from '../context/GeoLogContext';
-import { getCurrentLocation } from '../utils/permissions';
+import { getCurrentLocation, requestLocationPermissions } from '../utils/permissions';
 
 export default function CaptureScreen() {
   const router = useRouter();
@@ -23,12 +23,18 @@ export default function CaptureScreen() {
 
   const [permission, requestPermission] = useCameraPermissions();
   const [photoUri, setPhotoUri] = useState<string | null>(null);
+  const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [isCapturing, setIsCapturing] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
 
-  // Solicitar/verificar permisos de cámara
+  // Solicitar permisos de ubicación anticipadamente al cargar la pantalla
+  useEffect(() => {
+    requestLocationPermissions();
+  }, []);
+
+  //verificar permisos de cámara
   if (!permission) {
     return <View style={styles.container} />;
   }
@@ -46,22 +52,39 @@ export default function CaptureScreen() {
     );
   }
 
-  // Tomar fotografía
+  //captura simultánea: Tomar foto y obtener coordenadas GPS
   const handleTakePhoto = async () => {
     if (cameraRef.current) {
       try {
-        const photo = await cameraRef.current.takePictureAsync();
+        setIsCapturing(true);
+
+        // Disparar lectura de GPS y captura de foto de forma simultánea
+        const [photo, locationCoords] = await Promise.all([
+          cameraRef.current.takePictureAsync(),
+          getCurrentLocation(),
+        ]);
+
         if (photo?.uri) {
           setPhotoUri(photo.uri);
+          setLocation(locationCoords);
           setShowCamera(false);
+
+          if (!locationCoords) {
+            Alert.alert(
+              'Aviso',
+              'No se pudo obtener la ubicación GPS al tomar la foto.'
+            );
+          }
         }
       } catch (error) {
-        Alert.alert('Error', 'No se pudo tomar la fotografía');
+        Alert.alert('Error', 'No se pudo tomar la fotografía ni obtener la ubicación.');
+      } finally {
+        setIsCapturing(false);
       }
     }
   };
 
-  // Guardar entrada con ubicación GPS
+  //guardar entrada utilizando los datos capturados previamente
   const handleSaveEntry = async () => {
     if (!photoUri) {
       Alert.alert('Atención', 'Debes tomar una fotografía primero.');
@@ -75,28 +98,18 @@ export default function CaptureScreen() {
     setIsCapturing(true);
 
     try {
-      // Obtener ubicación GPS usando el utilitario refactorizado
-      const locationCoords = await getCurrentLocation();
-
-      if (!locationCoords) {
-        Alert.alert(
-          'Aviso',
-          'No se otorgaron permisos de ubicación. La foto se guardará sin datos GPS.'
-        );
-      }
-
-      // Crea objeto de bitácora
       addLog({
         id: Date.now().toString(),
         photoUri,
         title,
         description,
-        location: locationCoords,
+        location,
         timestamp: Date.now(),
       });
 
       // Limpiar formulario y navegar a la Galería
       setPhotoUri(null);
+      setLocation(null);
       setTitle('');
       setDescription('');
       setIsCapturing(false);
@@ -116,8 +129,13 @@ export default function CaptureScreen() {
             <TouchableOpacity
               style={styles.captureButton}
               onPress={handleTakePhoto}
+              disabled={isCapturing}
             >
-              <View style={styles.captureButtonInner} />
+              {isCapturing ? (
+                <ActivityIndicator color="#2563eb" size="large" />
+              ) : (
+                <View style={styles.captureButtonInner} />
+              )}
             </TouchableOpacity>
           </View>
         </CameraView>
@@ -131,6 +149,14 @@ export default function CaptureScreen() {
       {photoUri ? (
         <View style={styles.previewContainer}>
           <Image source={{ uri: photoUri }} style={styles.previewImage} />
+          {location && (
+            <View style={styles.locationBadge}>
+              <MapPin color="#fff" size={14} />
+              <Text style={styles.locationBadgeText}>
+                {location.latitude.toFixed(4)}, {location.longitude.toFixed(4)}
+              </Text>
+            </View>
+          )}
           <TouchableOpacity
             style={styles.retakeButton}
             onPress={() => setShowCamera(true)}
@@ -195,7 +221,7 @@ const styles = StyleSheet.create({
   cameraContainer: { flex: 1, backgroundColor: '#000' },
   cameraOverlay: {
     flex: 1,
-    justifyContent: 'flex-end',
+    justify: 'flex-end',
     alignItems: 'center',
     paddingBottom: 40,
   },
@@ -245,6 +271,19 @@ const styles = StyleSheet.create({
   placeholderText: { marginTop: 8, color: '#64748b', fontSize: 16 },
   previewContainer: { position: 'relative', height: 220, borderRadius: 12 },
   previewImage: { width: '100%', height: '100%', borderRadius: 12 },
+  locationBadge: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    backgroundColor: 'rgba(15, 23, 42, 0.75)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    gap: 4,
+  },
+  locationBadgeText: { color: '#fff', fontSize: 12, fontWeight: '600' },
   retakeButton: {
     position: 'absolute',
     bottom: 10,
