@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Linking,
   ScrollView,
   StyleSheet,
   Text,
@@ -29,12 +30,33 @@ export default function CaptureScreen() {
   const [isCapturing, setIsCapturing] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
 
-  // Solicitar permisos de ubicación anticipadamente de forma segura
+  // Pedir permisos de ubicación solo una vez al iniciar la pantalla
   useEffect(() => {
     requestLocationPermissions();
   }, []);
 
-  //fallback mientras cargan los permisos
+  // Manejo inteligente de permisos de cámara (con fallback a Ajustes del Sistema)
+  const handleCameraPermissionRequest = async () => {
+    if (!permission) return;
+
+    if (permission.canAskAgain) {
+      const res = await requestPermission();
+      if (!res.granted) {
+        Alert.alert(
+          'Permiso denegado',
+          'Debes permitir el acceso a la cámara en los ajustes del dispositivo para tomar fotografías.',
+          [
+            { text: 'Cancelar', style: 'cancel' },
+            { text: 'Abrir Ajustes', onPress: () => Linking.openSettings() },
+          ]
+        );
+      }
+    } else {
+      Linking.openSettings();
+    }
+  };
+
+  // Fallback de carga inicial
   if (!permission) {
     return (
       <View style={styles.centered}>
@@ -43,7 +65,7 @@ export default function CaptureScreen() {
     );
   }
 
-  //fallback UI: Si el permiso de cámara fue denegado
+  // Fallback UI si no hay permiso de cámara
   if (!permission.granted) {
     return (
       <View style={styles.centered}>
@@ -51,8 +73,10 @@ export default function CaptureScreen() {
         <Text style={styles.permissionText}>
           No se ha otorgado acceso a la cámara. Para registrar fotos en la bitácora, habilita el permiso correspondiente.
         </Text>
-        <TouchableOpacity style={styles.button} onPress={requestPermission}>
-          <Text style={styles.buttonText}>Conceder Permiso</Text>
+        <TouchableOpacity style={styles.button} onPress={handleCameraPermissionRequest}>
+          <Text style={styles.buttonText}>
+            {permission.canAskAgain ? 'Conceder Permiso' : 'Abrir Ajustes del Sistema'}
+          </Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.secondaryButton}
@@ -64,14 +88,13 @@ export default function CaptureScreen() {
     );
   }
 
-  //captura de fotografía y obtención segura del GPS
+  // Tomar la foto y obtener la ubicación actual de forma silenciosa
   const handleTakePhoto = async () => {
     if (!cameraRef.current || isCapturing) return;
 
     try {
       setIsCapturing(true);
 
-      // Obtener la fotografía
       const photo = await cameraRef.current.takePictureAsync({
         quality: 0.8,
       });
@@ -80,7 +103,6 @@ export default function CaptureScreen() {
         setPhotoUri(photo.uri);
         setShowCamera(false);
 
-        //bbtener lectura de GPS con fallback seguro
         const locationCoords = await getCurrentLocation();
         setLocation(locationCoords);
 
@@ -98,7 +120,6 @@ export default function CaptureScreen() {
     }
   };
 
-  //guardar entrada en el Context
   const handleSaveEntry = async () => {
     if (!photoUri) {
       Alert.alert('Atención', 'Debes tomar una fotografía primero.');
@@ -121,7 +142,6 @@ export default function CaptureScreen() {
         timestamp: Date.now(),
       });
 
-      //limpiar formulario y navegar
       setPhotoUri(null);
       setLocation(null);
       setTitle('');
@@ -135,7 +155,6 @@ export default function CaptureScreen() {
     }
   };
 
-  //vista de visor de Cámara
   if (showCamera) {
     return (
       <View style={styles.cameraContainer}>
@@ -158,7 +177,6 @@ export default function CaptureScreen() {
     );
   }
 
-  //formulario principal
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.label}>Fotografía</Text>
