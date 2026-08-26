@@ -1,17 +1,26 @@
 import * as Location from 'expo-location';
+import { Linking } from 'react-native';
 
 /**
- * Solicita permisos de ubicación únicamente si no han sido concedidos previamente.
+ * Solicita permisos de ubicación. Si ya fueron denegados permanentemente,
+ * permite redirigir al usuario a los Ajustes del Sistema.
  */
 export const requestLocationPermissions = async (): Promise<boolean> => {
   try {
-    const { status: existingStatus } = await Location.getForegroundPermissionsAsync();
+    const { status: existingStatus, canAskAgain } = await Location.getForegroundPermissionsAsync();
+
     if (existingStatus === 'granted') {
       return true;
     }
 
-    const { status } = await Location.requestForegroundPermissionsAsync();
-    return status === 'granted';
+    if (canAskAgain) {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      return status === 'granted';
+    } else {
+      // Redirige a los ajustes del sistema si el usuario rechazó el permiso permanentemente
+      await Linking.openSettings();
+      return false;
+    }
   } catch (error) {
     console.error('Error al solicitar permisos de ubicación:', error);
     return false;
@@ -19,7 +28,7 @@ export const requestLocationPermissions = async (): Promise<boolean> => {
 };
 
 /**
- * Obtiene la ubicación GPS con Alta Precisión sin volver a lanzar alertas emergentes si ya fue denegado.
+ * Obtiene la ubicación GPS con Alta Precisión sin lanzar alertas bloqueantes.
  */
 export const getCurrentLocation = async (): Promise<{ latitude: number; longitude: number } | null> => {
   try {

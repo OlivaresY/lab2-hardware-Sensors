@@ -1,10 +1,12 @@
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import { Camera, Image as ImageIcon, MapPin } from 'lucide-react-native';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  AppState,
   Image,
   Linking,
   ScrollView,
@@ -22,7 +24,8 @@ export default function CaptureScreen() {
   const { addLog } = useGeoLog();
   const cameraRef = useRef<CameraView>(null);
 
-  const [permission, requestPermission] = useCameraPermissions();
+  const [permission, requestPermission, getPermissionAsync] = useCameraPermissions();
+  const [hasLocationPermission, setHasLocationPermission] = useState<boolean | null>(null);
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [title, setTitle] = useState('');
@@ -30,12 +33,38 @@ export default function CaptureScreen() {
   const [isCapturing, setIsCapturing] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
 
-  // Pedir permisos de ubicación solo una vez al iniciar la pantalla
+  // Re-evaluar permisos automáticamente cada vez que la app vuelve al primer plano
   useEffect(() => {
-    requestLocationPermissions();
-  }, []);
+    const subscription = AppState.addEventListener('change', async (nextAppState) => {
+      if (nextAppState === 'active') {
+        if (getPermissionAsync) {
+          await getPermissionAsync();
+        }
+        const { status } = await Location.getForegroundPermissionsAsync();
+        setHasLocationPermission(status === 'granted');
+      }
+    });
 
-  // Manejo inteligente de permisos de cámara (con fallback a Ajustes del Sistema)
+    return () => {
+      subscription.remove();
+    };
+  }, [getPermissionAsync]);
+
+  const handleEnableLocation = async () => {
+    const granted = await requestLocationPermissions();
+    setHasLocationPermission(granted);
+    if (!granted) {
+      Alert.alert(
+        'Ubicación Desactivada',
+        'Si denegaste el permiso permanentemente, debes habilitarlo desde los Ajustes de tu dispositivo.',
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          { text: 'Abrir Ajustes', onPress: () => Linking.openSettings() },
+        ]
+      );
+    }
+  };
+
   const handleCameraPermissionRequest = async () => {
     if (!permission) return;
 
@@ -44,7 +73,7 @@ export default function CaptureScreen() {
       if (!res.granted) {
         Alert.alert(
           'Permiso denegado',
-          'Debes permitir el acceso a la cámara en los ajustes del dispositivo para tomar fotografías.',
+          'Debes permitir el acceso a la cámara en los ajustes del dispositivo.',
           [
             { text: 'Cancelar', style: 'cancel' },
             { text: 'Abrir Ajustes', onPress: () => Linking.openSettings() },
@@ -56,7 +85,6 @@ export default function CaptureScreen() {
     }
   };
 
-  // Fallback de carga inicial
   if (!permission) {
     return (
       <View style={styles.centered}>
@@ -65,7 +93,7 @@ export default function CaptureScreen() {
     );
   }
 
-  // Fallback UI si no hay permiso de cámara
+  // Vista de permisos denegados
   if (!permission.granted) {
     return (
       <View style={styles.centered}>
@@ -73,11 +101,13 @@ export default function CaptureScreen() {
         <Text style={styles.permissionText}>
           No se ha otorgado acceso a la cámara. Para registrar fotos en la bitácora, habilita el permiso correspondiente.
         </Text>
+
         <TouchableOpacity style={styles.button} onPress={handleCameraPermissionRequest}>
           <Text style={styles.buttonText}>
-            {permission.canAskAgain ? 'Conceder Permiso' : 'Abrir Ajustes del Sistema'}
+            {permission.canAskAgain ? 'Conceder Permiso de Cámara' : 'Abrir Ajustes del Sistema'}
           </Text>
         </TouchableOpacity>
+
         <TouchableOpacity
           style={styles.secondaryButton}
           onPress={() => router.push('/gallery')}
@@ -88,16 +118,12 @@ export default function CaptureScreen() {
     );
   }
 
-  // Tomar la foto y obtener la ubicación actual de forma silenciosa
   const handleTakePhoto = async () => {
     if (!cameraRef.current || isCapturing) return;
 
     try {
       setIsCapturing(true);
-
-      const photo = await cameraRef.current.takePictureAsync({
-        quality: 0.8,
-      });
+      const photo = await cameraRef.current.takePictureAsync({ quality: 0.8 });
 
       if (photo?.uri) {
         setPhotoUri(photo.uri);
@@ -108,8 +134,12 @@ export default function CaptureScreen() {
 
         if (!locationCoords) {
           Alert.alert(
-            'Aviso de Ubicación',
-            'No se lograron obtener las coordenadas GPS exactas. La entrada se guardará sin datos de localización.'
+            'GPS Desactivado o Sin Permisos',
+            '¿Deseas activar los permisos de ubicación para registrar las coordenadas GPS?',
+            [
+              { text: 'No por ahora', style: 'cancel' },
+              { text: 'Activar Ubicación', onPress: handleEnableLocation },
+            ]
           );
         }
       }
@@ -179,6 +209,15 @@ export default function CaptureScreen() {
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
+      {!hasLocationPermission && (
+        <TouchableOpacity style={styles.locationBanner} onPress={handleEnableLocation}>
+          <MapPin color="#d97706" size={18} />
+          <Text style={styles.locationBannerText}>
+            Ubicación desactivada. Toca aquí para activarla.
+          </Text>
+        </TouchableOpacity>
+      )}
+
       <Text style={styles.label}>Fotografía</Text>
       {photoUri ? (
         <View style={styles.previewContainer}>
@@ -191,10 +230,13 @@ export default function CaptureScreen() {
               </Text>
             </View>
           ) : (
-            <View style={[styles.locationBadge, styles.noLocationBadge]}>
+            <TouchableOpacity
+              style={[styles.locationBadge, styles.noLocationBadge]}
+              onPress={handleEnableLocation}
+            >
               <MapPin color="#fff" size={14} />
-              <Text style={styles.locationBadgeText}>Sin GPS</Text>
-            </View>
+              <Text style={styles.locationBadgeText}>Sin GPS (Toca para activar)</Text>
+            </TouchableOpacity>
           )}
           <TouchableOpacity
             style={styles.retakeButton}
@@ -298,6 +340,23 @@ const styles = StyleSheet.create({
     color: '#334155',
     lineHeight: 22,
   },
+  locationBanner: {
+    backgroundColor: '#fef3c7',
+    borderColor: '#f59e0b',
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 10,
+  },
+  locationBannerText: {
+    color: '#92400e',
+    fontSize: 13,
+    fontWeight: '600',
+    flex: 1,
+  },
   label: {
     fontSize: 16,
     fontWeight: 'bold',
@@ -331,7 +390,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   noLocationBadge: {
-    backgroundColor: 'rgba(225, 29, 72, 0.8)',
+    backgroundColor: 'rgba(225, 29, 72, 0.9)',
   },
   locationBadgeText: { color: '#fff', fontSize: 12, fontWeight: '600' },
   retakeButton: {
